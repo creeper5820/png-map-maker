@@ -37,6 +37,8 @@ public:
     };
     using NodesMatrix = std::vector<std::vector<Node>>;
 
+    /// @note: w -> x
+    /// @note: h -> y
     explicit ObstacleMap(std::size_t w, std::size_t h)
         : internal_w(w) {
         internal_nodes.resize(w);

@@ -112,7 +112,10 @@ public:
         extract.filter(*pointcloud);
     }
 
-    static std::unique_ptr<ObstacleMap> generate_map(const PointCloud& pointcloud) {
+    static std::unique_ptr<ObstacleMap>
+        generate_map(const PointCloud& pointcloud, double resolution = 0.1) {
+        const auto f = [&](float v) { return static_cast<std::size_t>(v / resolution); };
+
         auto point_min = Point{};
         auto point_max = Point{};
         pcl::getMinMax3D(pointcloud, point_min, point_max);
@@ -120,11 +123,11 @@ public:
             "Point cloud area: (%4.2f, %4.2f, %4.2f) -> (%4.2f, %4.2f, %4.2f)\n", point_min.x,
             point_min.y, point_min.z, point_max.x, point_max.y, point_max.z);
 
-        for (const auto& point : pointcloud) {
-            const auto f = [&](float) {
+        auto w   = point_max.x - point_min.x;
+        auto h   = point_max.y - point_min.y;
+        auto map = std::make_unique<ObstacleMap>(w, h);
 
-            };
-        }
+        for (const auto& point : pointcloud) {}
 
         return nullptr;
     }

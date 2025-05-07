@@ -13,7 +13,7 @@
 #include <pcl/point_types.h>
 #include <pcl/segmentation/sac_segmentation.h>
 
-// #include "lodepng/lodepng.h"
+#include "lodepng/lodepng.hh"
 #include "node.hh"
 
 namespace rmcs {
@@ -136,9 +136,9 @@ public:
                 data[x + y * map.w()] = std::clamp<uint8_t>(map(x, y).value, 0, 255);
             }
 
-        auto w = uint{static_cast<uint>(map.w())};
-        auto h = uint{static_cast<uint>(map.h())};
-        // auto result = lodepng::encode(path, data, w, h, LCT_GREY);
+        auto w      = uint{static_cast<uint>(map.w())};
+        auto h      = uint{static_cast<uint>(map.h())};
+        auto result = lodepng::encode(path, data, w, h, LCT_GREY);
     }
 };
 

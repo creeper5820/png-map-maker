@@ -12,7 +12,7 @@ struct ObstacleMap {
 public:
     /// @note 当 node_height 为 -1 时，UNKNOWN
     struct Node {
-        int8_t value{-1};
+        uint8_t value{255};
 
         // 高度表，0 -> 100 对应 0 -> 1 m
         std::unordered_set<uint8_t> height_table;
@@ -34,7 +34,7 @@ public:
             height_table.insert(key);
         }
 
-        uint8_t color() const { return value == -1 ? 255 : 0; }
+        uint8_t color() const { return value; }
     };
     using NodesMatrix = std::vector<std::vector<Node>>;
 
@@ -48,9 +48,21 @@ public:
             nodes.resize(h, Node{});
     }
 
-    void update_node(std::size_t x, std::size_t y, int8_t v) {
+    void update_node(std::size_t x, std::size_t y, int8_t v, std::size_t expand) {
         assert(x < w() && y < h());
-        internal_nodes[x][y].value = v;
+        (*this)(x, y).value = v;
+
+        auto left  = std::size_t{expand / 2};
+        auto right = std::size_t{expand - left};
+
+        std::size_t x_begin = (x < left) ? 0 : x - left;
+        std::size_t y_begin = (y < left) ? 0 : y - left;
+        std::size_t x_end   = x + right > w() ? w() : x + right;
+        std::size_t y_end   = y + right > h() ? h() : y + right;
+
+        for (auto x = x_begin; x < x_end; x++)
+            for (auto y = y_begin; y < y_end; y++)
+                (*this)(x, y).value = v;
     }
 
     const Node& operator()(std::size_t row, std::size_t col) const {

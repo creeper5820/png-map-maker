@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+#include <cstddef>
 #include <memory>
 #include <string>
 
@@ -28,6 +30,22 @@ struct hash<std::pair<std::size_t, std::size_t>> {
 } // namespace std
 
 namespace rmcs {
+
+namespace config {
+
+inline auto resolution = std::double_t{0.1};
+static void set_resolution(std::double_t resolution) { config::resolution = resolution; }
+
+inline auto points_limit = std::size_t{5};
+static void set_points_limit(std::size_t points_limit) { config::points_limit = points_limit; }
+
+inline auto height_limit = std::double_t{0.2};
+static void set_height_limit(std::double_t height_limit) { config::height_limit = height_limit; }
+
+inline auto expand_size = std::size_t{0};
+static void set_expand_size(std::size_t expand_size) { config::expand_size = expand_size; }
+
+} // namespace config
 
 template <typename _value_type, class _next_config>
 struct _internal_config_value {
@@ -129,8 +147,8 @@ public:
         std::printf("去除地面结束\n");
     }
 
-    static std::unique_ptr<ObstacleMap>
-        generate_map(const PointCloud& pointcloud, double resolution = 0.1) {
+    static std::unique_ptr<ObstacleMap> generate_map(const PointCloud& pointcloud) {
+        const auto resolution = config::resolution;
 
         auto point_min = Point{};
         auto point_max = Point{};
@@ -153,13 +171,19 @@ public:
         }
         std::printf("更新所有节点高程表\n");
 
+        for (auto i = f(std::abs(point_min.x)); i < w; i++)
+            (*map)(i, f(std::abs(point_min.y))).value = 255;
+        for (auto i = f(std::abs(point_min.y)); i < h; i++)
+            (*map)(f(std::abs(point_min.x)), i).value = 255;
+        std::printf("初始点坐标 (%zu, %zu)\n", f(std::abs(point_min.x)), f(std::abs(point_min.y)));
+
         for (auto [x, y] : visited) {
             auto& node = (*map)(x, y);
-            if (node.height_table_size() < 5)
+            if (node.height_table_size() < config::points_limit)
                 continue;
-            if (node.maximum_height_range() < 0.1)
+            if (node.maximum_height_range() < config::height_limit)
                 continue;
-            node.value = 100;
+            map->update_node(x, y, 0, config::expand_size);
         }
         std::printf("更新所有节点值\n");
 
@@ -167,18 +191,19 @@ public:
     }
 
     static void encode_png(const std::string& path, const ObstacleMap& map) {
-        std::printf("障碍地图栅格大小: %zu, h: %zu\n", map.w(), map.h());
+        std::printf("障碍地图栅格大小x方向: %zu, y方向: %zu(右手系)\n", map.w(), map.h());
 
         auto data = std::vector<std::uint8_t>();
         data.resize(map.w() * map.h(), 0);
 
         for (auto x = 0; x < map.w(); x++)
             for (auto y = 0; y < map.h(); y++) {
-                data[x + y * map.w()] = map(x, y).color();
+                auto x_ = map.w() - x - 1, y_ = map.h() - y - 1;
+                data[x_ * map.h() + y_] = map(x, y).color();
             }
 
-        auto w      = uint{static_cast<uint>(map.w())};
-        auto h      = uint{static_cast<uint>(map.h())};
+        auto w      = uint{static_cast<uint>(map.h())};
+        auto h      = uint{static_cast<uint>(map.w())};
         auto result = lodepng::encode(path, data, w, h, LCT_GREY);
     }
 };

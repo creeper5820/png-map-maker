@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cmath>
 #include <cstdint>
 #include <unordered_set>
 #include <vector>
@@ -34,13 +33,16 @@ public:
             const auto key = get_height_value(height);
             height_table.insert(key);
         }
+
+        uint8_t color() const { return value == -1 ? 255 : 0; }
     };
     using NodesMatrix = std::vector<std::vector<Node>>;
 
     /// @note: w -> x
     /// @note: h -> y
     explicit ObstacleMap(std::size_t w, std::size_t h)
-        : internal_w(w) {
+        : internal_w(w)
+        , internal_h(h) {
         internal_nodes.resize(w);
         for (auto& nodes : internal_nodes)
             nodes.resize(h, Node{});

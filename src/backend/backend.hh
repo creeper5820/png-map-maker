@@ -16,6 +16,17 @@
 #include "lodepng/lodepng.hh"
 #include "node.hh"
 
+namespace std {
+template <>
+struct hash<std::pair<std::size_t, std::size_t>> {
+    std::size_t operator()(const std::pair<std::size_t, std::size_t>& p) const {
+        auto h1 = std::hash<std::size_t>{}(p.first);
+        auto h2 = std::hash<std::size_t>{}(p.second);
+        return h1 ^ h2;
+    }
+};
+} // namespace std
+
 namespace rmcs {
 
 template <typename _value_type, class _next_config>
@@ -46,10 +57,14 @@ public:
     using PointCloud = pcl::PointCloud<Point>;
 
     static std::shared_ptr<PointCloud> read_pointcloud(const std::string& path) {
+        std::printf("从 %s 加载点云数据\n", path.c_str());
+
         auto pointcloud = std::make_shared<PointCloud>();
         if (pcl::io::loadPCDFile(path, *pointcloud) == -1) {
             throw std::runtime_error{"Something went wrong while reading pcd file"};
         }
+
+        std::printf("加载完毕，点云数量为 %zu\n", pointcloud->size());
         return pointcloud;
     }
 
@@ -110,33 +125,56 @@ public:
         extract.setIndices(indices_ground_from_segment_source);
         extract.setNegative(true);
         extract.filter(*pointcloud);
+
+        std::printf("去除地面结束\n");
     }
 
     static std::unique_ptr<ObstacleMap>
         generate_map(const PointCloud& pointcloud, double resolution = 0.1) {
-        const auto f = [&](float v) { return static_cast<std::size_t>(v / resolution); };
 
         auto point_min = Point{};
         auto point_max = Point{};
         pcl::getMinMax3D(pointcloud, point_min, point_max);
         std::printf(
-            "Point cloud area: (%4.2f, %4.2f, %4.2f) -> (%4.2f, %4.2f, %4.2f)\n", point_min.x,
-            point_min.y, point_min.z, point_max.x, point_max.y, point_max.z);
+            "点云区域: (%4.2f, %4.2f, %4.2f) -> (%4.2f, %4.2f, %4.2f)\n", point_min.x, point_min.y,
+            point_min.z, point_max.x, point_max.y, point_max.z);
 
-        auto w   = point_max.x - point_min.x;
-        auto h   = point_max.y - point_min.y;
+        auto f   = [&](float v) { return static_cast<std::size_t>(v / resolution); };
+        auto w   = f(point_max.x - point_min.x) + 1;
+        auto h   = f(point_max.y - point_min.y) + 1;
         auto map = std::make_unique<ObstacleMap>(w, h);
 
-        for (const auto& point : pointcloud) {}
+        auto visited = std::unordered_set<std::pair<std::size_t, std::size_t>>{};
+        for (const auto& point : pointcloud) {
+            auto x = f(point.x - point_min.x);
+            auto y = f(point.y - point_min.y);
+            visited.insert(std::make_pair(x, y));
+            (*map)(x, y).update_height_table(point.z);
+        }
+        std::printf("更新所有节点高程表\n");
 
-        return nullptr;
+        for (auto [x, y] : visited) {
+            auto& node = (*map)(x, y);
+            if (node.height_table_size() < 5)
+                continue;
+            if (node.maximum_height_range() < 0.1)
+                continue;
+            node.value = 100;
+        }
+        std::printf("更新所有节点值\n");
+
+        return map;
     }
 
     static void encode_png(const std::string& path, const ObstacleMap& map) {
-        auto data = std::vector<std::uint8_t>(map.h() * map.w(), std::uint8_t{0});
+        std::printf("障碍地图栅格大小: %zu, h: %zu\n", map.w(), map.h());
+
+        auto data = std::vector<std::uint8_t>();
+        data.resize(map.w() * map.h(), 0);
+
         for (auto x = 0; x < map.w(); x++)
             for (auto y = 0; y < map.h(); y++) {
-                data[x + y * map.w()] = std::clamp<uint8_t>(map(x, y).value, 0, 255);
+                data[x + y * map.w()] = map(x, y).color();
             }
 
         auto w      = uint{static_cast<uint>(map.w())};

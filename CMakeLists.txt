@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.17)
 project(map-maker)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -19,5 +19,8 @@ add_executable(
 )
 target_link_libraries(
     app
-    ${PCL_LIBRARIES}
+    pcl_common
+    pcl_io
+    pcl_filters
+    pcl_segmentation
 )

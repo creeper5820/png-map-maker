@@ -34,7 +34,9 @@ auto main(int argc, const char* const* argv) -> int {
 
     auto result = options.parse(argc, argv);
     if (result.count("help")) {
-        std::cout << options.help();
+        std::cout << greeting_texture << std::endl;
+        std::cout << options.help() << std::endl;
+        return 0;
     }
 
     auto path_pcd = std::string{};
@@ -59,7 +61,7 @@ auto main(int argc, const char* const* argv) -> int {
     backend::remove_ground(pointcloud);
 
     auto map = backend::generate_map(*pointcloud);
-    // backend::encode_png(path_out, *map);
+    backend::encode_png(path_out, *map);
 
     return 0;
 }

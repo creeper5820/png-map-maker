@@ -10,6 +10,8 @@
 #include <pcl/filters/conditional_removal.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/passthrough.h>
+#include <pcl/filters/statistical_outlier_removal.h>
+#include <pcl/filters/voxel_grid.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -19,11 +21,10 @@
 #include "node.hh"
 
 namespace std {
-template <>
-struct hash<std::pair<std::size_t, std::size_t>> {
+template <> struct hash<std::pair<std::size_t, std::size_t>> {
     std::size_t operator()(const std::pair<std::size_t, std::size_t>& p) const {
-        auto h1 = std::hash<std::size_t>{}(p.first);
-        auto h2 = std::hash<std::size_t>{}(p.second);
+        auto h1 = std::hash<std::size_t> {}(p.first);
+        auto h2 = std::hash<std::size_t> {}(p.second);
         return h1 ^ h2;
     }
 };
@@ -33,22 +34,23 @@ namespace rmcs {
 
 namespace config {
 
-inline auto resolution = std::double_t{0.1};
-static void set_resolution(std::double_t resolution) { config::resolution = resolution; }
+    inline auto resolution = std::double_t { 0.1 };
+    static void set_resolution(std::double_t resolution) { config::resolution = resolution; }
 
-inline auto points_limit = std::size_t{5};
-static void set_points_limit(std::size_t points_limit) { config::points_limit = points_limit; }
+    inline auto points_limit = std::size_t { 5 };
+    static void set_points_limit(std::size_t points_limit) { config::points_limit = points_limit; }
 
-inline auto height_limit = std::double_t{0.2};
-static void set_height_limit(std::double_t height_limit) { config::height_limit = height_limit; }
+    inline auto height_limit = std::double_t { 0.2 };
+    static void set_height_limit(std::double_t height_limit) {
+        config::height_limit = height_limit;
+    }
 
-inline auto expand_size = std::size_t{0};
-static void set_expand_size(std::size_t expand_size) { config::expand_size = expand_size; }
+    inline auto expand_size = std::size_t { 0 };
+    static void set_expand_size(std::size_t expand_size) { config::expand_size = expand_size; }
 
 } // namespace config
 
-template <typename _value_type, class _next_config>
-struct _internal_config_value {
+template <typename _value_type, class _next_config> struct _internal_config_value {
 protected:
     _next_config& set_value(const _value_type& value) {
         this->value = value;
@@ -62,11 +64,11 @@ protected:
     _value_type value;
 };
 
-#define RMCS_ADD_CONFIG(NAME, TYPE)                                                   \
-    template <class _next_config, typename _value_type = TYPE>                        \
-    struct NAME : protected _internal_config_value<TYPE, _next_config> {              \
-        _next_config& set_##NAME(const _value_type& v) { return this->set_value(v); } \
-        _next_config& get_##NAME(_value_type& v) { return this->get_value(v); }       \
+#define RMCS_ADD_CONFIG(NAME, TYPE)                                                                \
+    template <class _next_config, typename _value_type = TYPE>                                     \
+    struct NAME : protected _internal_config_value<TYPE, _next_config> {                           \
+        _next_config& set_##NAME(const _value_type& v) { return this->set_value(v); }              \
+        _next_config& get_##NAME(_value_type& v) { return this->get_value(v); }                    \
     }
 
 struct backend {
@@ -79,7 +81,7 @@ public:
 
         auto pointcloud = std::make_shared<PointCloud>();
         if (pcl::io::loadPCDFile(path, *pointcloud) == -1) {
-            throw std::runtime_error{"Something went wrong while reading pcd file"};
+            throw std::runtime_error { "Something went wrong while reading pcd file" };
         }
 
         std::printf("加载完毕，点云数量为 %zu\n", pointcloud->size());
@@ -90,10 +92,10 @@ public:
         auto outside_condition = std::make_shared<pcl::ConditionAnd<PointCloud::PointType>>();
         outside_condition->addComparison(
             std::make_shared<const pcl::FieldComparison<PointCloud::PointType>>(
-                "z", pcl::ComparisonOps::LT, 3.0));
+                "z", pcl::ComparisonOps::LT, 2.0));
         outside_condition->addComparison(
             std::make_shared<const pcl::FieldComparison<PointCloud::PointType>>(
-                "z", pcl::ComparisonOps::GT, 0.0));
+                "z", pcl::ComparisonOps::GT, -0.5));
 
         pcl::ConditionalRemoval<PointCloud::PointType> removal;
         removal.setCondition(outside_condition);
@@ -102,7 +104,7 @@ public:
         auto pointcloud_fit_height = std::make_shared<PointCloud>();
         removal.filter(*pointcloud_fit_height);
 
-        auto pass_through = pcl::PassThrough<PointCloud::PointType>{};
+        auto pass_through = pcl::PassThrough<PointCloud::PointType> {};
         pass_through.setInputCloud(pointcloud_fit_height);
         pass_through.setFilterFieldName("z");
         pass_through.setFilterLimits(-1, 0.2);
@@ -115,7 +117,7 @@ public:
 
         auto indices_ground_from_segment_source = std::make_shared<pcl::PointIndices>();
         auto coefficients                       = std::make_shared<pcl::ModelCoefficients>();
-        auto segmentation                       = pcl::SACSegmentation<Point>{};
+        auto segmentation                       = pcl::SACSegmentation<Point> {};
         segmentation.setOptimizeCoefficients(true);
         segmentation.setModelType(pcl::SACMODEL_PERPENDICULAR_PLANE);
         segmentation.setMethodType(pcl::SAC_RANSAC);
@@ -138,36 +140,56 @@ public:
                     indices_segment_source_from_origin->indices[index]);
         }
 
-        auto extract = pcl::ExtractIndices<PointCloud::PointType>{};
+        auto extract = pcl::ExtractIndices<PointCloud::PointType> {};
         extract.setInputCloud(pointcloud_fit_height);
         extract.setIndices(indices_ground_from_segment_source);
         extract.setNegative(true);
         extract.filter(*pointcloud);
 
-        std::printf("去除地面结束\n");
+        std::printf("去除地面结束，剩余点云大小为 %zu\n", pointcloud->size());
+    }
+
+    static void remove_outlier_points(const std::shared_ptr<PointCloud>& pointcloud) {
+        const auto resolution = config::resolution;
+
+        auto outlier_removal_filter = std::make_unique<pcl::StatisticalOutlierRemoval<Point>>();
+        outlier_removal_filter->setMeanK(20);
+        outlier_removal_filter->setStddevMulThresh(0.5);
+        outlier_removal_filter->setInputCloud(pointcloud);
+        outlier_removal_filter->filter(*pointcloud);
+
+        auto voxel = pcl::VoxelGrid<Point> {};
+        voxel.setLeafSize(Eigen::Vector4f(resolution, resolution, resolution, 1.0));
+        voxel.setInputCloud(pointcloud);
+        voxel.filter(*pointcloud);
+
+        std::printf("滤波完毕，剩余点云大小为 %zu\n", pointcloud->size());
     }
 
     static std::unique_ptr<ObstacleMap> generate_map(const PointCloud& pointcloud) {
         const auto resolution = config::resolution;
+        const auto expand     = static_cast<size_t>(0.1 / resolution);
 
-        auto point_min = Point{};
-        auto point_max = Point{};
+        auto point_min = Point {};
+        auto point_max = Point {};
         pcl::getMinMax3D(pointcloud, point_min, point_max);
-        std::printf(
-            "点云区域: (%4.2f, %4.2f, %4.2f) -> (%4.2f, %4.2f, %4.2f)\n", point_min.x, point_min.y,
-            point_min.z, point_max.x, point_max.y, point_max.z);
+        std::printf("点云区域: (%4.2f, %4.2f, %4.2f) -> (%4.2f, %4.2f, %4.2f)\n", point_min.x,
+            point_min.y, point_min.z, point_max.x, point_max.y, point_max.z);
 
         auto f   = [&](float v) { return static_cast<std::size_t>(v / resolution); };
         auto w   = f(point_max.x - point_min.x) + 1;
         auto h   = f(point_max.y - point_min.y) + 1;
         auto map = std::make_unique<ObstacleMap>(w, h);
 
-        auto visited = std::unordered_set<std::pair<std::size_t, std::size_t>>{};
+        // 更新高度表，由于点云较为稀疏，所以取 0.1 / resolution 的影响范围，增加单个栅格内的信息量
+        auto visited = std::unordered_set<std::pair<std::size_t, std::size_t>> {};
         for (const auto& point : pointcloud) {
-            auto x = f(point.x - point_min.x);
-            auto y = f(point.y - point_min.y);
-            visited.insert(std::make_pair(x, y));
-            (*map)(x, y).update_height_table(point.z);
+            const auto update = [&](std::size_t x, std::size_t y, ObstacleMap::Node& node) {
+                node.update_height_table(point.z);
+                visited.insert(std::make_pair(x, y));
+            };
+            const auto x = f(point.x - point_min.x), y = f(point.y - point_min.y);
+            map->update_node_with_round_area(x, y, expand, update);
         }
         std::printf("更新所有节点高程表\n");
 
@@ -177,13 +199,11 @@ public:
             (*map)(f(std::abs(point_min.x)), i).value = 255;
         std::printf("初始点坐标 (%zu, %zu)\n", f(std::abs(point_min.x)), f(std::abs(point_min.y)));
 
-        for (auto [x, y] : visited) {
+        for (const auto [x, y] : visited) {
             auto& node = (*map)(x, y);
-            if (node.height_table_size() < config::points_limit)
-                continue;
-            if (node.maximum_height_range() < config::height_limit)
-                continue;
-            map->update_node(x, y, 0, config::expand_size);
+            if (node.height_table_size() < config::points_limit) continue;
+            if (node.maximum_height_range() < config::height_limit) continue;
+            map->update_node_value(x, y, config::expand_size, 0);
         }
         std::printf("更新所有节点值\n");
 
@@ -202,8 +222,8 @@ public:
                 data[x_ * map.h() + y_] = map(x, y).color();
             }
 
-        auto w      = uint{static_cast<uint>(map.h())};
-        auto h      = uint{static_cast<uint>(map.w())};
+        auto w      = uint { static_cast<uint>(map.h()) };
+        auto h      = uint { static_cast<uint>(map.w()) };
         auto result = lodepng::encode(path, data, w, h, LCT_GREY);
     }
 };

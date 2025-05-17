@@ -95,6 +95,9 @@ auto main(int argc, const char* const* argv) -> int {
     config::set_points_limit(points_limit);
     config::set_height_limit(height_limit);
     config::set_expand_size(expand_size);
+
+    backend::remove_outlier_points(pointcloud);
+    backend::remove_ground(pointcloud);
     auto map = backend::generate_map(*pointcloud);
 
     backend::encode_png(path_out, *map);

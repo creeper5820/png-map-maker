@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <functional>
 #include <unordered_set>
 #include <vector>
 
@@ -12,25 +13,21 @@ struct ObstacleMap {
 public:
     /// @note 当 node_height 为 -1 时，UNKNOWN
     struct Node {
-        uint8_t value{255};
-
-        // 高度表，0 -> 100 对应 0 -> 1 m
+        uint8_t value { 255 };
         std::unordered_set<uint8_t> height_table;
 
-        std::size_t height_table_size() const { //
-            return height_table.size();
-        }
+        std::size_t height_table_size() const { return height_table.size(); }
+
         double maximum_height_range() const {
-            const auto& table        = height_table;
-            const auto& [begin, end] = std::tuple(table.begin(), table.end());
-            const auto& [min, max]   = std::minmax_element(begin, end);
-            return static_cast<double>(*max - *min) / 100.;
+            if (height_table.empty()) { // 关键修复：处理空集合
+                return 0.0;
+            }
+            const auto [min, max] = std::minmax_element(height_table.begin(), height_table.end());
+            return static_cast<double>(*max - *min) / 100.0;
         }
+
         void update_height_table(double height) {
-            const auto get_height_value = [](double h) {
-                return static_cast<uint8_t>(std::clamp(h, 0., 1.) * 100);
-            };
-            const auto key = get_height_value(height);
+            const auto key = static_cast<uint8_t>(std::clamp(height, 0.0, 1.0) * 100);
             height_table.insert(key);
         }
 
@@ -45,24 +42,57 @@ public:
         , internal_h(h) {
         internal_nodes.resize(w);
         for (auto& nodes : internal_nodes)
-            nodes.resize(h, Node{});
+            nodes.resize(h, Node {});
     }
 
-    void update_node(std::size_t x, std::size_t y, int8_t v, std::size_t expand) {
-        assert(x < w() && y < h());
-        (*this)(x, y).value = v;
+    void update_node_value(std::size_t x, std::size_t y, std::size_t expand, int8_t v) {
+        update_node_with_round_area(
+            x, y, expand, [v](std::size_t, std::size_t, Node& node) { node.value = v; });
+    }
 
-        auto left  = std::size_t{expand / 2};
-        auto right = std::size_t{expand - left};
+    void update_node_height(std::size_t x, std::size_t y, std::size_t expand, double height) {
+        update_node_with_round_area(x, y, expand,
+            [height](std::size_t, std::size_t, Node& node) { node.update_height_table(height); });
+    }
 
-        std::size_t x_begin = (x < left) ? 0 : x - left;
-        std::size_t y_begin = (y < left) ? 0 : y - left;
-        std::size_t x_end   = x + right > w() ? w() : x + right;
-        std::size_t y_end   = y + right > h() ? h() : y + right;
+    void update_node_with_round_area(std::size_t x, std::size_t y, std::size_t expand,
+        std::function<void(std::size_t, std::size_t, Node&)> apply) {
 
-        for (auto x = x_begin; x < x_end; x++)
-            for (auto y = y_begin; y < y_end; y++)
-                (*this)(x, y).value = v;
+        std::invoke(apply, x, y, (*this)(x, y));
+
+        std::size_t x_min = (x >= expand) ? (x - expand) : 0;
+        std::size_t x_max = std::min(x + expand, w() - 1);
+        std::size_t y_min = (y >= expand) ? (y - expand) : 0;
+        std::size_t y_max = std::min(y + expand, h() - 1);
+
+        const int64_t expand_sq = static_cast<int64_t>(expand) * expand;
+
+        for (std::size_t _x = x_min; _x <= x_max; ++_x) {
+            for (std::size_t _y = y_min; _y <= y_max; ++_y) {
+                const int64_t dx = static_cast<int64_t>(_x) - static_cast<int64_t>(x);
+                const int64_t dy = static_cast<int64_t>(_y) - static_cast<int64_t>(y);
+
+                const int64_t distance_sq = dx * dx + dy * dy;
+                if (distance_sq <= expand_sq) std::invoke(apply, _x, _y, (*this)(_x, _y));
+            }
+        }
+    }
+
+    void foreach (std::function<void(std::size_t x, std::size_t y, Node& node)> callback) {
+        for (std::size_t x = 0; x < w(); ++x) {
+            for (std::size_t y = 0; y < h(); ++y) {
+                callback(x, y, (*this)(x, y));
+            }
+        }
+    }
+
+    void foreach (
+        std::function<void(std::size_t x, std::size_t y, const Node& node)> callback) const {
+        for (std::size_t x = 0; x < w(); ++x) {
+            for (std::size_t y = 0; y < h(); ++y) {
+                callback(x, y, (*this)(x, y));
+            }
+        }
     }
 
     const Node& operator()(std::size_t row, std::size_t col) const {
